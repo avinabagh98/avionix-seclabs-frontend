@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Avionix SecLabs frontend
 
-## Getting Started
+This directory contains the Next.js frontend only. The live API server is a
+separate service; this project does not contain or run the backend.
 
-First, run the development server:
+## Run the frontend
 
-```bash
+From this directory:
+
+```powershell
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Other useful commands:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```powershell
+npm run lint
+npm test
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Development and production builds use separate Next.js output directories
+(`.next-dev/` and `.next/`) so running a dev server alongside a production
+build does not corrupt either server's generated modules.
 
-## Learn More
+Set `NEXT_PUBLIC_API_URL` in `.env.local` to configure the API origin. The
+included local setting is `http://127.0.0.1:8000`; requests append the documented
+`/api/...` paths. This value is embedded in the browser bundle, so it must not
+contain secrets.
 
-To learn more about Next.js, take a look at the following resources:
+## Pages and shared UI
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| File | Responsibility |
+| --- | --- |
+| `app/layout.tsx` | Root HTML layout, navigation, metadata, global styling, and shared providers. |
+| `app/globals.css` | Global Tailwind and application styles. |
+| `app/page.tsx` | Dashboard route (`/`); checks API health and links to topology and simulator tools. |
+| `app/topology/page.tsx` | Topology route (`/topology`); requests and displays devices and links. |
+| `app/simulator/page.tsx` | Simulator route (`/simulator`); page heading and packet form. |
+| `components/providers/QueryProvider.tsx` | Creates and shares the TanStack Query client. |
+| `components/simulator/PacketForm.tsx` | Packet input form, evaluation request, and verdict/error display. |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## API, data, and state
 
-## Deploy on Vercel
+| File | Responsibility |
+| --- | --- |
+| `services/topologyApi.ts` | Fetches the topology endpoint and records success/error telemetry. |
+| `schemas/apiSchema.ts` | Zod response schemas and inferred TypeScript types for the documented API. |
+| `hooks/useTopologyQuery.ts` | TanStack Query hook for loading and refreshing topology every 15 seconds. |
+| `lib/api.ts` | Typed JSON client for health, topology, router sync/state, simulator evaluation, and audit endpoints. |
+| `lib/errors.ts` | Typed HTTP and schema-drift error classes. |
+| `store/useAppStore.ts` | Typed Zustand store for a bounded list of frontend telemetry messages. |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Data flow
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Topology
+
+`app/topology/page.tsx` → `hooks/useTopologyQuery.ts` →
+`services/topologyApi.ts` → external `GET /api/topology/map` →
+`schemas/apiSchema.ts` validates the response → the page renders nodes and
+links. TanStack Query caches the result and refreshes it every 15 seconds.
+
+### Packet simulator
+
+`app/simulator/page.tsx` renders `components/simulator/PacketForm.tsx`. The form
+converts optional port values to numbers (or `null`) and calls
+`apiClient.evaluateTraffic()` in `lib/api.ts`, which sends
+`POST /api/simulator/evaluate`. It can also synchronize the router using
+`POST /api/router/{router_name}/sync`. The topology page provides controls for
+router sync, cached state, and audit.
+
+The request paths and response schemas are based on the provided live API
+documentation.
+
+The API client currently maps to these documented routes:
+
+| Frontend action | API request |
+| --- | --- |
+| Dashboard connection status | `GET /` |
+| Load topology | `GET /api/topology/map` |
+| Sync a router | `POST /api/router/{router_name}/sync` |
+| Load cached router state | `GET /api/router/{router_name}/state` |
+| Evaluate packet | `POST /api/simulator/evaluate` |
+| Audit router | `GET /api/simulator/audit/{router_name}` |
+
+If the browser reports a CORS error, allow the frontend's origin
+(`http://localhost:3000` or `http://127.0.0.1:3000`) in the separate backend's
+CORS configuration.
+
+## Other project files
+
+| File/folder | Responsibility |
+| --- | --- |
+| `public/` | Static assets served directly by Next.js. |
+| `__tests__/` | Vitest tests for topology fetching, schema validation, and error handling. |
+| `package.json` | Frontend dependencies and npm scripts. |
+| `tsconfig.json` | TypeScript compiler settings and the `@/` import alias. |
+| `eslint.config.mjs` | ESLint configuration. |
+| `next.config.ts` | Next.js configuration. |
+| `vitest.config.ts` | Vitest configuration. |
